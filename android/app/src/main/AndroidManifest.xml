@@ -1,5 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="app.musicplayer">
+<!-- The application id lives in app/build.gradle.kts (`namespace` /
+     `applicationId`). AGP 8+ rejects a `package` attribute here. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -8,6 +9,10 @@
     <!-- Needed on Android 13+ to pick images/audio from the media library -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Android 12 and below predate the READ_MEDIA_* split permissions, and
+         minSdk here is 23, so the file/image pickers still need this there. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application

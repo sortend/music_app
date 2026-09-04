@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 /// Thin wrapper around Firebase Auth. Keeps the rest of the app decoupled
 /// from the Firebase SDK directly.
@@ -19,10 +20,22 @@ class AuthService {
       email: email,
       password: password,
     );
-    await _db.collection('users').doc(cred.user!.uid).set({
-      'name': name,
-      'email': email,
-    });
+
+    final uid = cred.user?.uid;
+    if (uid != null) {
+      try {
+        await _db.collection('users').doc(uid).set({
+          'name': name,
+          'email': email,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        // The account itself exists at this point, so a failed profile write
+        // must not surface as "registration failed" — that would leave the
+        // user unable to register *or* log in.
+        debugPrint('Could not save the user profile document: $e');
+      }
+    }
     return cred;
   }
 

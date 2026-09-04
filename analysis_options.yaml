@@ -1,0 +1,12 @@
+# flutter_lints is in dev_dependencies but was never activated — without this
+# file `flutter analyze` runs with no lint rules at all. The standard set
+# already covers the mistakes this app had (use_build_context_synchronously,
+# unnecessary null checks, dead code, ...).
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Leaked subscriptions/sinks were a real source of bugs here.
+    - cancel_subscriptions
+    - close_sinks
+    - avoid_print

@@ -12,17 +12,31 @@ import 'screens/home_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // A failure here (no google-services.json, Firestore/Auth not enabled in
+  // the console, ...) used to leave a blank screen with the reason only
+  // visible in the device log.
+  String? startupError;
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Enables lockscreen/notification playback controls for background playback.
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.example.personal_music_app.channel.audio',
-    androidNotificationChannelName: 'Music playback',
-    androidNotificationOngoing: true,
-  );
+    // Enables lockscreen/notification playback controls for background playback.
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'app.musicplayer.channel.audio',
+      androidNotificationChannelName: 'Music playback',
+      androidNotificationOngoing: true,
+    );
+  } catch (e) {
+    startupError = '$e';
+  }
 
-  runApp(const MusicApp());
+  runApp(startupError == null ? const MusicApp() : StartupErrorApp(message: startupError));
 }
+
+ThemeData _theme() => ThemeData(
+      colorSchemeSeed: const Color(0xFF6C4CE0),
+      brightness: Brightness.dark,
+      useMaterial3: true,
+    );
 
 class MusicApp extends StatelessWidget {
   const MusicApp({super.key});
@@ -37,12 +51,52 @@ class MusicApp extends StatelessWidget {
       child: MaterialApp(
         title: 'My Music',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorSchemeSeed: const Color(0xFF6C4CE0),
-          brightness: Brightness.dark,
-          useMaterial3: true,
-        ),
+        theme: _theme(),
         home: const AuthGate(),
+      ),
+    );
+  }
+}
+
+/// Shown instead of a blank screen when Firebase can't start up.
+class StartupErrorApp extends StatelessWidget {
+  final String message;
+
+  const StartupErrorApp({super.key, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'My Music',
+      debugShowCheckedModeBanner: false,
+      theme: _theme(),
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48),
+                const SizedBox(height: 16),
+                const Text(
+                  "My Music couldn't start",
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Check that Firebase Auth and Firestore are enabled for this '
+                  'project (see README.md).',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Text(message, textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, color: Colors.white54)),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

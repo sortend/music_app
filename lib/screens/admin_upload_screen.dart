@@ -10,7 +10,7 @@ import '../services/firestore_service.dart';
 
 /// Simple upload form. Intentionally minimal per the app's "no unnecessary
 /// features" requirement — just enough to get a song's audio + cover +
-/// metadata into Storage/Firestore once, from any device.
+/// metadata uploaded once, from any device.
 class AdminUploadScreen extends StatefulWidget {
   const AdminUploadScreen({super.key});
 
@@ -31,23 +31,63 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
   double _progress = 0;
   String? _error;
 
+  @override
+  void dispose() {
+    // Previously leaked — controllers outlive the State otherwise.
+    _titleCtrl.dispose();
+    _artistCtrl.dispose();
+    _albumCtrl.dispose();
+    super.dispose();
+  }
+
+  String get _audioName =>
+      _audioFile == null ? '' : _audioFile!.path.split(RegExp(r'[/\\]')).last;
+
   Future<void> _pickAudio() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.audio);
-    if (result != null && result.files.single.path != null) {
-      setState(() => _audioFile = File(result.files.single.path!));
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.audio);
+      final path = result?.files.single.path;
+      if (path == null || !mounted) return;
+      setState(() {
+        _audioFile = File(path);
+        _error = null;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Could not open the file picker: $e');
     }
   }
 
   Future<void> _pickCover() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked != null) setState(() => _coverFile = File(picked.path));
+    try {
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (picked == null || !mounted) return;
+      setState(() {
+        _coverFile = File(picked.path);
+        _error = null;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Could not open the image picker: $e');
+    }
   }
 
   Future<void> _upload() async {
-    if (_titleCtrl.text.trim().isEmpty || _artistCtrl.text.trim().isEmpty || _audioFile == null) {
+    if (_titleCtrl.text.trim().isEmpty ||
+        _artistCtrl.text.trim().isEmpty ||
+        _audioFile == null) {
       setState(() => _error = 'Title, artist, and an audio file are required.');
       return;
     }
+    if (!await _audioFile!.exists()) {
+      if (mounted) {
+        setState(() => _error = 'That audio file is no longer available. Pick it again.');
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     setState(() {
       _uploading = true;
       _error = null;
@@ -62,18 +102,23 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
       Duration? duration;
       try {
         duration = await tempPlayer.setFilePath(_audioFile!.path);
+      } catch (_) {
+        // An unreadable header shouldn't block the upload; the player falls
+        // back to the real duration at playback time.
       } finally {
         await tempPlayer.dispose();
       }
 
-      final audioPath = await _storage.uploadAudio(
-        songId, _audioFile!,
-        onProgress: (p) => setState(() => _progress = p),
+      final audioUrl = await _storage.uploadAudio(
+        songId,
+        _audioFile!,
+        onProgress: (p) {
+          if (mounted) setState(() => _progress = p);
+        },
       );
 
-      final coverUrl = _coverFile != null
-          ? await _storage.uploadCover(songId, _coverFile!)
-          : '';
+      final coverUrl =
+          _coverFile != null ? await _storage.uploadCover(songId, _coverFile!) : '';
 
       final song = Song(
         id: songId,
@@ -81,20 +126,19 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
         artist: _artistCtrl.text.trim(),
         album: _albumCtrl.text.trim(),
         coverUrl: coverUrl,
-        audioPath: audioPath,
+        audioPath: audioUrl,
         durationMs: duration?.inMilliseconds ?? 0,
         createdAt: DateTime.now(),
       );
       await _firestore.addSong(song);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Song uploaded — it will appear on all your devices.')),
-        );
-        Navigator.of(context).pop();
-      }
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Song uploaded — it will appear on all your devices.')),
+      );
+      navigator.pop();
     } catch (e) {
-      setState(() => _error = 'Upload failed: $e');
+      // Guarded: an upload can outlive the screen if the user backs out.
+      if (mounted) setState(() => _error = 'Upload failed: $e');
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -108,15 +152,34 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
         padding: const EdgeInsets.all(16),
         child: ListView(
           children: [
-            TextField(controller: _titleCtrl, decoration: const InputDecoration(labelText: 'Title *')),
+            TextField(
+              controller: _titleCtrl,
+              enabled: !_uploading,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'Title *'),
+            ),
             const SizedBox(height: 12),
-            TextField(controller: _artistCtrl, decoration: const InputDecoration(labelText: 'Artist *')),
+            TextField(
+              controller: _artistCtrl,
+              enabled: !_uploading,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'Artist *'),
+            ),
             const SizedBox(height: 12),
-            TextField(controller: _albumCtrl, decoration: const InputDecoration(labelText: 'Album (optional)')),
+            TextField(
+              controller: _albumCtrl,
+              enabled: !_uploading,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(labelText: 'Album (optional)'),
+            ),
             const SizedBox(height: 20),
             OutlinedButton.icon(
               icon: const Icon(Icons.audiotrack),
-              label: Text(_audioFile == null ? 'Choose audio file *' : 'Audio: ${_audioFile!.path.split('/').last}'),
+              label: Text(
+                _audioFile == null ? 'Choose audio file *' : 'Audio: $_audioName',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               onPressed: _uploading ? null : _pickAudio,
             ),
             const SizedBox(height: 8),
@@ -130,7 +193,15 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
               Text(_error!, style: const TextStyle(color: Colors.redAccent)),
             ],
             const SizedBox(height: 24),
-            if (_uploading) LinearProgressIndicator(value: _progress > 0 ? _progress : null),
+            if (_uploading) ...[
+              LinearProgressIndicator(value: _progress > 0 ? _progress : null),
+              const SizedBox(height: 8),
+              const Text(
+                'Uploading — keep this screen open until it finishes.',
+                style: TextStyle(fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ],
             const SizedBox(height: 12),
             FilledButton(
               onPressed: _uploading ? null : _upload,

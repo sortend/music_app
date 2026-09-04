@@ -1,8 +1,9 @@
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android Gradle plugin.
-    // Note: AGP 9.0+ has built-in Kotlin support, so the separate
-    // 'kotlin-android' plugin is no longer needed here.
+    // No Kotlin plugin is applied on purpose: MainActivity is Java, so the
+    // build doesn't depend on whether this AGP version enables built-in
+    // Kotlin support. (Flutter plugin packages bring their own Kotlin setup.)
     id("dev.flutter.flutter-gradle-plugin")
     // Add the Google services Gradle plugin
     id("com.google.gms.google-services")

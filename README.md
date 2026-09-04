@@ -18,7 +18,8 @@ lib/
     auth_service.dart           Firebase Auth (email/password)
     firestore_service.dart      Song metadata: list, search, add, delete
     storage_service.dart        Uploads audio/covers to Cloudinary, returns public URLs
-    download_service.dart       Local download manager (progress, dedupe, delete)
+    download_service.dart       Local download manager (progress, dedupe, delete,
+                                offline metadata cache)
     player_service.dart         Playback: local-file-first, else stream; background audio
   screens/
     login_screen.dart
@@ -32,6 +33,7 @@ lib/
     mini_player.dart            Bottom bar shown across screens
   main.dart                     App entry, providers, auth gate
   firebase_options.dart         Filled in with your Firebase project's real values
+analysis_options.yaml           Activates flutter_lints for `flutter analyze`
 firestore.rules                 Only authenticated users can read/write songs
 android/app/src/main/AndroidManifest.xml   Permissions + background-audio service
 ```
@@ -99,14 +101,16 @@ The APK will be at `build/app/outputs/flutter-apk/app-release.apk`.
   `AudioSource.uri()` on the Cloudinary HTTPS URL; `just_audio` streams it
   progressively rather than downloading first.
 - **Download for offline** — `download_service.dart` streams the file to
-  a temp path and only renames it into place once complete (so an
-  interrupted download can't masquerade as a finished one), tracks
-  downloaded IDs in `SharedPreferences`, and skips re-downloading if a
-  song is already present.
-- **Offline mode** — `home_screen.dart` and `downloads_screen.dart` check
-  connectivity via `connectivity_plus`; the Downloads screen never touches
-  the network to list what's available, and online-only songs show a
-  "cloud off" indicator and disabled play/download buttons.
+  a temp path and only renames it into place once complete *and* the byte
+  count matches `Content-Length` (so a dropped connection can't leave a
+  truncated file masquerading as a finished download), tracks downloaded
+  IDs plus each song's metadata in `SharedPreferences`, and skips
+  re-downloading if a song is already present.
+- **Offline mode** — `home_screen.dart` checks connectivity via
+  `connectivity_plus`; the Downloads screen makes no network calls at all
+  (title/artist/cover come from the local metadata cache written at
+  download time), and online-only songs show a "cloud off" indicator with
+  disabled play/download buttons.
 - **Multi-device** — nothing device-specific is stored in Firestore/Cloudinary;
   only the local download cache and SharedPreferences record are per-device.
 - **Delete download ≠ delete song** — `download_service.deleteDownload()`
@@ -114,7 +118,10 @@ The APK will be at `build/app/outputs/flutter-apk/app-release.apk`.
   and Firestore entry are never touched.
 - **Background playback** — `just_audio_background` + the Android
   `AudioService`/`MediaButtonReceiver` entries in the manifest give
-  lockscreen/notification controls.
+  lockscreen/notification controls. `player_service.dart` mirrors the
+  player's own state stream into its `ChangeNotifier`, so using those
+  lockscreen buttons keeps the in-app UI in sync, and a finished track
+  auto-advances to the next one in the queue.
 
 ## Notes / things to double check before shipping
 
@@ -123,9 +130,17 @@ The APK will be at `build/app/outputs/flutter-apk/app-release.apk`.
   personal app this is a reasonable tradeoff (no card, no server), but
   don't share those values publicly. If that matters more later, switch
   to a signed upload flow via a small backend function.
-- `firestore_service.searchSongs()` does a client-side filter, which is
-  fine for a personal library (hundreds/low thousands of songs).
+- `firestore_service.searchSongs()` does a client-side filter over the whole
+  collection, which is fine for a personal library (hundreds/low thousands of
+  songs). The fetch is cached for 2 minutes so typing a query doesn't bill a
+  full-collection read per keystroke; `addSong`/`deleteSong` invalidate it.
 - The admin upload screen has no separate "admin role" — any authenticated
   user of the app can upload, matching a single-owner personal app.
+- The launcher icon is a vector/adaptive icon (`res/mipmap*/ic_launcher.xml`)
+  rather than the usual PNG set, so no binary assets are needed. Swap in real
+  PNGs via `flutter_launcher_icons` if you want finer artwork.
+- `MainActivity` is Java, not Kotlin, so the app module compiles without a
+  Kotlin Gradle plugin regardless of AGP version. See the note in
+  `MainActivity.java` if you want to move it back to Kotlin.
 - iOS isn't wired up (Android-only per the spec).
 - Only upload audio you own or are licensed to distribute.
