@@ -16,8 +16,8 @@ import 'package:http/http.dart' as http;
 class StorageService {
   // Replace these with your own values from cloudinary.com (Dashboard for
   // the cloud name; Settings > Upload > Upload presets for the preset).
-  static const String cloudName = 'REPLACE_WITH_YOUR_CLOUD_NAME';
-  static const String uploadPreset = 'REPLACE_WITH_YOUR_UNSIGNED_PRESET';
+  static const String cloudName = 'pg9y2gtu';
+  static const String uploadPreset = 'music_app_upload';
 
   Future<String> _upload(File file, String resourceType, String publicId, {
     void Function(double progress)? onProgress,
